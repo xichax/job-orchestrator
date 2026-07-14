@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Job Orchestration Platform</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --muted: #8b949e;
+    --text: #e6edf3; --accent: #58a6ff;
+    --queued: #d29922; --running: #58a6ff; --retry: #db6d28;
+    --ok: #3fb950; --fail: #f85149; --cancel: #8b949e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  header { padding: 20px 28px; border-bottom: 1px solid var(--border); }
+  h1 { margin: 0; font-size: 20px; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .wrap { padding: 20px 28px; display: grid; gap: 20px; grid-template-columns: 340px 1fr; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+  .panel h2 { margin: 0 0 14px; font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, select { width: 100%; padding: 8px 10px; background: #0d1117; border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 13px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button { cursor: pointer; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; }
+  .submit { margin-top: 16px; width: 100%; padding: 10px; background: var(--accent); color: #0d1117; }
+  .submit:hover { filter: brightness(1.1); }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .presets button { padding: 5px 9px; background: #21262d; color: var(--text); border: 1px solid var(--border); font-weight: 500; font-size: 12px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; min-width: 84px; }
+  .stat .n { font-size: 20px; font-weight: 700; }
+  .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
+  td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr.job { cursor: pointer; }
+  tr.job:hover { background: #1c2129; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .b-QUEUED { background: rgba(210,153,34,.15); color: var(--queued); }
+  .b-RUNNING { background: rgba(88,166,255,.15); color: var(--running); }
+  .b-RETRYING { background: rgba(219,109,40,.15); color: var(--retry); }
+  .b-SUCCEEDED { background: rgba(63,185,80,.15); color: var(--ok); }
+  .b-FAILED { background: rgba(248,81,73,.15); color: var(--fail); }
+  .b-CANCELLED { background: rgba(139,148,158,.15); color: var(--cancel); }
+  .b-TIMED_OUT { background: rgba(219,109,40,.15); color: var(--retry); }
+  .b-ERROR { background: rgba(248,81,73,.15); color: var(--fail); }
+  .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .runs { background: #0d1117; }
+  .runs pre { margin: 6px 0 0; padding: 8px; background: #010409; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 11px; color: #adbac7; white-space: pre-wrap; max-height: 180px; overflow: auto; }
+  .cancel-btn { padding: 4px 10px; background: #21262d; color: var(--fail); border: 1px solid var(--border); }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Job Orchestration Platform</h1>
+  <div class="sub">Submit a job &rarr; the scheduler provisions an isolated container per job, with retries &amp; backoff.</div>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <h2>Submit a job</h2>
+    <label>Name</label>
+    <input id="name" value="hello" />
+    <label>Image</label>
+    <input id="image" value="docker.io/library/alpine:3.20" />
+    <label>Command</label>
+    <input id="command" value="echo hello from an isolated container" />
+    <div class="row2">
+      <div><label>CPUs</label><input id="cpus" value="0.5" /></div>
+      <div><label>Memory</label><input id="memory" value="128m" /></div>
+    </div>
+    <div class="row2">
+      <div><label>Max retries</label><input id="maxRetries" type="number" value="2" /></div>
+      <div><label>Timeout (s)</label><input id="timeoutSeconds" type="number" value="60" /></div>
+    </div>
+    <div class="presets">
+      <button onclick="preset('success')">Success</button>
+      <button onclick="preset('fail')">Always fails</button>
+      <button onclick="preset('slow')">Slow (timeout)</button>
+      <button onclick="preset('work')">CPU work</button>
+    </div>
+    <button class="submit" onclick="submitJob()">Submit job</button>
+  </div>
+
+  <div>
+    <div class="stats" id="stats"></div>
+    <div class="panel">
+      <h2>Jobs</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Image</th><th>Status</th><th>Attempts</th><th></th></tr></thead>
+        <tbody id="jobs"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const expanded = new Set();
+
+function preset(kind) {
+  const set = (id, v) => document.getElementById(id).value = v;
+  if (kind === 'success') { set('name','hello'); set('image','docker.io/library/alpine:3.20'); set('command','echo hello from an isolated container'); set('maxRetries','2'); set('timeoutSeconds','60'); }
+  if (kind === 'fail')    { set('name','always-fails'); set('image','docker.io/library/alpine:3.20'); set('command','sh -c "echo boom && exit 1"'); set('maxRetries','2'); set('timeoutSeconds','60'); }
+  if (kind === 'slow')    { set('name','slow-job'); set('image','docker.io/library/alpine:3.20'); set('command','sleep 30'); set('maxRetries','1'); set('timeoutSeconds','5'); }
+  if (kind === 'work')    { set('name','cpu-work'); set('image','docker.io/library/alpine:3.20'); set('command','sh -c "for i in $(seq 1 5); do echo step $i; sleep 1; done"'); set('maxRetries','1'); set('timeoutSeconds','60'); }
+}
+
+async function submitJob() {
+  const num = id => { const v = document.getElementById(id).value; return v === '' ? null : Number(v); };
+  const body = {
+    name: document.getElementById('name').value,
+    image: document.getElementById('image').value,
+    command: document.getElementById('command').value,
+    cpus: document.getElementById('cpus').value,
+    memory: document.getElementById('memory').value,
+    maxRetries: num('maxRetries'),
+    timeoutSeconds: num('timeoutSeconds')
+  };
+  const r = await fetch('/api/jobs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (!r.ok) { alert('Submit failed: ' + r.status); return; }
+  refresh();
+}
+
+async function cancelJob(id, ev) {
+  ev.stopPropagation();
+  await fetch('/api/jobs/' + id + '/cancel', { method: 'POST' });
+  refresh();
+}
+
+function toggle(id) {
+  if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
+  refresh();
+}
+
+function fmt(ts) { return ts ? new Date(ts).toLocaleTimeString() : ''; }
+
+async function refresh() {
+  try {
+    const [stats, jobs] = await Promise.all([
+      fetch('/api/stats').then(r => r.json()),
+      fetch('/api/jobs').then(r => r.json())
+    ]);
+
+    const order = ['total','queued','running','retrying','succeeded','failed','cancelled'];
+    document.getElementById('stats').innerHTML = order.map(k =>
+      `<div class="stat"><div class="n">${stats[k] ?? 0}</div><div class="l">${k}</div></div>`).join('');
+
+    const rows = [];
+    for (const j of jobs) {
+      const canCancel = j.status === 'QUEUED' || j.status === 'RETRYING';
+      rows.push(`<tr class="job" onclick="toggle(${j.id})">
+        <td class="mono">#${j.id}</td>
+        <td>${escapeHtml(j.name)}</td>
+        <td class="mono muted">${escapeHtml(j.image)}</td>
+        <td><span class="badge b-${j.status}">${j.status}</span></td>
+        <td>${j.attempts}/${j.maxRetries + 1}</td>
+        <td>${canCancel ? `<button class="cancel-btn" onclick="cancelJob(${j.id}, event)">cancel</button>` : ''}</td>
+      </tr>`);
+      if (expanded.has(j.id)) {
+        rows.push(`<tr class="runs"><td colspan="6" id="runs-${j.id}"><span class="muted">loading attempts…</span></td></tr>`);
+      }
+    }
+    document.getElementById('jobs').innerHTML = rows.join('');
+
+    for (const j of jobs) {
+      if (expanded.has(j.id)) loadRuns(j.id);
+    }
+  } catch (e) { /* transient */ }
+}
+
+async function loadRuns(id) {
+  const runs = await fetch('/api/jobs/' + id + '/runs').then(r => r.json());
+  const cell = document.getElementById('runs-' + id);
+  if (!cell) return;
+  if (!runs.length) { cell.innerHTML = '<span class="muted">no attempts yet</span>'; return; }
+  cell.innerHTML = runs.map(run => `
+    <div style="margin-bottom:10px">
+      <span class="badge b-${run.status}">${run.status}</span>
+      <span class="mono muted">attempt ${run.attempt}</span>
+      <span class="mono muted">· exit ${run.exitCode ?? '—'}</span>
+      <span class="mono muted">· ${escapeHtml(run.containerId ?? '')}</span>
+      <span class="mono muted">· ${fmt(run.startedAt)}${run.finishedAt ? ' → ' + fmt(run.finishedAt) : ''}</span>
+      ${run.logsTail ? `<pre>${escapeHtml(run.logsTail)}</pre>` : ''}
+    </div>`).join('');
+}
+
+function escapeHtml(s) {
+  return (s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+refresh();
+setInterval(refresh, 2500);
+</script>
+</body>
+</html>
